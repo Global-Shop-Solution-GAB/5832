@@ -1,0 +1,376 @@
+Program.Sub.ScreenSU.Start
+Gui.Form..Create
+Gui.Form..Caption("Time Attendance Export for ADP")
+Gui.Form..Size(6810,2640)
+Gui.Form..MinX(0)
+Gui.Form..MinY(0)
+Gui.Form..Position(0,0)
+Gui.Form..BackColor(-2147483633)
+Gui.Form..MousePointer(0)
+Gui.Form..Event(UnLoad,Form_UnLoad)
+Gui.Form.lbl1.Create(Label,"Start",True,495,255,0,195,945,True,0,"Arial",8,-2147483633,0)
+Gui.Form.dtpStart.Create(DatePicker)
+Gui.Form.dtpStart.Size(1935,285)
+Gui.Form.dtpStart.Position(195,1200)
+Gui.Form.dtpEnd.Create(DatePicker)
+Gui.Form.dtpEnd.Size(1935,285)
+Gui.Form.dtpEnd.Position(2295,1215)
+Gui.Form.lbl2.Create(Label,"End",True,495,255,0,2295,930,True,0,"Arial",8,-2147483633,0)
+Gui.Form.cmdOK.Create(Button)
+Gui.Form.cmdOK.Size(855,375)
+Gui.Form.cmdOK.Position(195,1665)
+Gui.Form.cmdOK.Caption("OK")
+Gui.Form.cmdOK.Event(Click,cmdOK_Click)
+Gui.Form.lbl3.Create(Label,"Export Folder",True,1935,255,0,195,180,True,0,"Arial",8,-2147483633,0)
+Gui.Form.txtExportFolder.Create(TextBox,"D:\Apps\INFISY\ADP",True,5250,300,0,195,435,True,0,"Arial",8,-2147483643,1)
+Gui.Form.cmdBrowseFolder.Create(Button)
+Gui.Form.cmdBrowseFolder.Size(855,375)
+Gui.Form.cmdBrowseFolder.Position(5565,405)
+Gui.Form.cmdBrowseFolder.Caption("^")
+Gui.Form.cmdBrowseFolder.Event(Click,cmdBrowseFolder_Click)
+Gui.Form.lblStatus.Create(Label,"",True,4215,255,0,1305,1800,True,0,"Arial",8,-2147483633,0)
+Gui.Form.cmdSend.Create(Button)
+Gui.Form.cmdSend.Size(855,375)
+Gui.Form.cmdSend.Position(5565,1665)
+Gui.Form.cmdSend.Caption("Send")
+Gui.Form.cmdSend.Event(Click,cmdSend_Click)
+Gui.Form.cmdSend.Visible(False)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+v.Global.sRootDir.Declare
+V.Global.sFileToSend.Declare
+v.Global.sExportFile.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'BN, Jan, 2019
+'Customer: MIBA
+'This project export Time Attendance in a csv format. 
+'If run from a menu item: will open a form for select date range
+'If run from Task Scheduler, will process yesterday data and send file using sftp WinScp
+'User may change credentials by ADP, if changed, needs to rehardcode the .bat file
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.dStart.Declare
+	v.Local.sFolder.Declare
+	v.Local.sContentBatFile.Declare
+	v.Local.sBatFile.Declare
+	v.Local.dTest.Declare
+	v.Local.sHold.Declare
+	v.Local.sFile.Declare
+	v.Local.bEx.Declare
+	
+	'v.Local.dTest.Set("12/28/2019")
+	v.Global.sRootDir.Set(v.Caller.GlobalDir)
+	f.Intrinsic.Control.CallSub("Check_And_Create_Custom_Folder")	
+	
+	'Not from Task Scheduler
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)
+		f.ODBC.Connection!conx.OpenCompanyConnection
+		gui.Form.txtExportFolder.Text("O:\INFISY\ADP")
+		Gui.Form..Show
+		
+	'Run from Task Scheduler	
+	f.Intrinsic.Control.Else
+		
+		gui.Form.txtExportFolder.Text("D:\Apps\INFISY\ADP")
+		
+		'Get the data of yesterday
+		f.Intrinsic.Date.DateAdd("D",-1,v.Ambient.Date,v.Local.dStart)
+		
+		'Default folder is set at the Form (O:\INFISY\ADP)
+		v.Local.sFolder.Set(v.Screen.Form!txtExportFolder.Text.Trim)
+		f.Intrinsic.File.DirExists(v.Local.sFolder,v.Local.bEx)
+		f.Intrinsic.Control.If(v.Local.bEx.Not)
+			f.Intrinsic.String.Build("{0}\Custom\5832\{1}\Daily Process",v.Global.sRootDir,v.Caller.CompanyCode,v.Local.sFolder)
+		f.Intrinsic.Control.EndIf		
+		
+		f.ODBC.Connection!conx.OpenCompanyConnection
+		f.Intrinsic.Control.CallSub("Process","dStart",v.Local.dStart,"dEnd",v.Local.dStart,"ExportFolder",v.Local.sFolder)
+		f.ODBC.Connection!conx.Close
+		
+		
+		'Export to a csv file
+		'Buid the FTPPut.bat content
+		f.Intrinsic.String.Build("{0}C:\Program Files (x86)\WinSCP\WinSCP.com{0} ^{1}  /log={0}D:\WinSCP_LogWinSCP.log{0} /ini=nul ^{1}  /command ^{1}    {0}open sftp://nx4_xfer:24288442-Adp@filetransfer2.adp.com:10022/ -hostkey={0}{0}ssh-rsa 2048 kSrsl2Spg1oyRZoDq/JI17DUdNMp3HR18hvqkr6GPFQ={0}{0}{0} ^{1}    {0}cd toADP{0} ^{1}    {0}Put {2}{0} ^{1}    {0}exit{0}{1}{1}set WINSCP_RESULT=%ERRORLEVEL%{1}if %WINSCP_RESULT% equ 0 ({1}  echo Success{1}) else ({1}  echo Error{1}){1}{1}exit /b %WINSCP_RESULT%",v.Ambient.DblQuote,v.Ambient.NewLine,v.Global.sFileToSend,v.Local.sContentBatFile)
+		
+
+		'Create FTPPut.bat file
+		f.Intrinsic.String.Build("{0}\{1}_ADP_Transfer_{2}.bat",v.Caller.FilesDir,v.Caller.CompanyCode,v.Caller.Terminal,v.Local.sBatFile)
+		f.Intrinsic.File.String2File(v.Local.sBatFile,v.Local.sContentBatFile)
+
+		'Send the file by using SFTP
+		F.Intrinsic.Task.LaunchSync(v.Local.sBatFile)
+		
+		'Write Log		
+		f.Intrinsic.String.Build("{0}\Custom\5832\{1}\Transaction Log\Daily_{2}.txt",v.Global.sRootDir,v.Caller.CompanyCode,v.Local.dStart.FormatYYYYMMDD,v.Local.sFile)
+		f.Intrinsic.File.Exists(v.Local.sFile,v.Local.bEx)
+		f.Intrinsic.Control.If(v.Local.bEx)
+			f.Intrinsic.File.File2String(v.Local.sFile,v.Local.sHold)
+		f.Intrinsic.Control.Else
+			v.Local.sHold.Set("")
+		f.Intrinsic.Control.EndIf			
+		
+		f.Intrinsic.String.Build("{0}{1}{2}: Completed processing file {3} ",v.Local.sHold,v.Ambient.NewLine,v.Ambient.Now,v.Global.sExportFile,v.Local.sHold)
+		f.Intrinsic.File.String2File(v.Local.sFile,v.Local.sHold)
+		f.Intrinsic.Control.CallSub("Unload")		
+		
+	f.Intrinsic.Control.EndIf	
+
+F.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub("Catch_Handling","ScriptPath",V.Ambient.ScriptPath,"CurrentSubroutine",V.Ambient.CurrentSubroutine,"ErrorNumber",V.Ambient.ErrorNumber,"ErrorDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Catch_Handling.Start
+v.Local.sError.Declare
+v.Local.sFile.Declare
+F.Intrinsic.String.Build("Project 5832 - GCG_5832_ADPExport.g2u: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Args.ScriptPath,V.Ambient.Newline,V.Args.CurrentSubroutine,V.Args.ErrorNumber,V.Args.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)	
+f.Intrinsic.Control.EndIf
+f.Intrinsic.String.Build("{0}\Custom\5832\{1}\GAB Error Log\{2}.txt",v.Global.sRootDir,v.Caller.CompanyCode,v.Ambient.Now.FormatYYYYMMDDHHNNSS,v.Local.sFile)
+f.Intrinsic.File.String2File(v.Local.sFile,v.Local.sError)
+f.Intrinsic.Control.CallSub("Unload")
+Program.Sub.Catch_Handling.End
+
+Program.Sub.UnLoad.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare
+v.Local.sFile.Declare
+	
+	f.Intrinsic.Control.If(v.ODBC.conx.State,=,1)
+		F.ODBC.Connection!conx.Close
+	f.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project 5832 - GCG_5832_ADPExport.g2u: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)	
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Build("{0}\Custom\5832\{1}\GAB Error Log\{2}",v.Global.sRootDir,v.Caller.CompanyCode,v.Ambient.Now.FormatYYYYMMDDHHNNSS,v.Local.sFile)
+	f.Intrinsic.File.String2File(v.Local.sFile,v.Local.sError)
+	F.Intrinsic.Control.End 
+F.Intrinsic.Control.EndTry
+Program.Sub.UnLoad.End
+
+Program.Sub.Check_And_Create_Custom_Folder.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.bExist.Declare
+	v.Local.sFile.Declare
+	v.Local.sDir.Declare
+	
+	f.Intrinsic.String.Build("{0}\Custom",v.Global.sRootDir,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\Custom\5832",v.Global.sRootDir,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\Custom\5832\{1}",v.Global.sRootDir,v.Caller.CompanyCode,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf	
+	
+	f.Intrinsic.String.Build("{0}\Custom\5832\{1}\Transaction Log",v.Global.sRootDir,v.Caller.CompanyCode,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf	
+	
+	f.Intrinsic.String.Build("{0}\Custom\5832\{1}\GAB Error Log",v.Global.sRootDir,v.Caller.CompanyCode,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\Custom\5832\{1}\Daily Process",v.Global.sRootDir,v.Caller.CompanyCode,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub("Catch_Handling","ScriptPath",V.Ambient.ScriptPath,"CurrentSubroutine",V.Ambient.CurrentSubroutine,"ErrorNumber",V.Ambient.ErrorNumber,"ErrorDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Check_And_Create_Custom_Folder.End
+
+Program.Sub.Form_UnLoad.Start
+f.Intrinsic.Control.CallSub("Unload")
+Program.Sub.Form_UnLoad.End
+
+Program.Sub.cmdOK_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.dStart.Declare
+	v.Local.dEnd.Declare
+	v.Local.sFolder.Declare
+	v.Local.bEx.Declare
+	v.Local.sSQL.Declare
+	
+	v.Local.dStart.Set(v.Screen.Form!dtpStart.Value)
+	v.Local.dEnd.Set(v.Screen.Form!dtpEnd.Value)
+	v.Local.sFolder.Set(v.Screen.Form!txtExportFolder.Text.Trim)
+	
+	f.Intrinsic.Control.If(v.Local.dStart,>,v.Local.dEnd)
+		f.Intrinsic.UI.Msgbox("Date range is invalid","Attention")	
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.File.DirExists(v.Local.sFolder,v.Local.bEx)
+	f.Intrinsic.Control.If(v.Local.bEx.Not)
+		f.Intrinsic.UI.Msgbox("Folder does not exist.","Attention")
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf	
+	
+	gui.Form.lblStatus.Caption("Processing...Please wait!")
+	f.Intrinsic.Control.CallSub("Process","dStart",v.Local.dStart,"dEnd",v.Local.dEnd,"ExportFolder",v.Local.sFolder)
+
+F.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub("Catch_Handling","ScriptPath",V.Ambient.ScriptPath,"CurrentSubroutine",V.Ambient.CurrentSubroutine,"ErrorNumber",V.Ambient.ErrorNumber,"ErrorDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdOK_Click.End
+
+Program.Sub.Process.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare
+	v.Local.iCnt.Declare
+	v.Local.sFile.Declare
+	v.Local.sHold.Declare
+	v.Local.sDateIn.Declare
+	v.Local.sDateOut.Declare
+	v.Local.sTimeIn.Declare
+	v.Local.sTimeOut.Declare
+	v.Local.dDateIn.Declare
+	v.Local.dDateOut.Declare
+	v.Local.bIsDate.Declare
+	v.Local.sExport.Declare
+	v.Local.dStart.Declare
+	v.Local.dEnd.Declare
+	
+	v.Local.dStart.Set(v.Args.dStart)
+	v.Local.dEnd.Set(v.Args.dEnd)
+
+	f.Intrinsic.String.Build("select t.Employee,ltrim(rtrim(e.Comments_1)) as Comments_1,t.Charge_Date,t.Date_In,t.Time_In,t.Date_Out,t.Time_Out  from TIME_ATTENDANCE t  left join Employee_Mstr e on t.Employee = e.Employee  Where charge_Date between '{0}' and '{1}' Order by Comments_1,Charge_Date,Date_In,Time_In",v.Local.dStart.FormatYYYYMMDD,v.Local.dEnd.FormatYYYYMMDD,v.Local.sSQL)
+	f.Intrinsic.Control.If(v.DataTable.Raw.Exists)
+		f.Data.DataTable.Close("Raw")
+	f.Intrinsic.Control.EndIf
+	f.Data.DataTable.CreateFromSQL("Raw","conx",v.Local.sSQL,True)
+	
+	f.Intrinsic.Control.If(v.DataTable.Raw.RowCount,=,0)
+		f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler)
+			f.Intrinsic.UI.Msgbox("No Record found.","Attention")
+			gui.Form.lblStatus.Caption("")
+			f.Intrinsic.Control.ExitSub	
+		f.Intrinsic.Control.Else
+			'For Task Scheduler
+			f.Intrinsic.String.Build("{0}\Custom\5832\{1}\Transaction Log\{2}_No_Recs.txt",v.Global.sRootDir,v.Caller.CompanyCode,v.Ambient.Now.FormatYYYYMMDDHHNNSS,v.Local.sFile)
+			f.Intrinsic.String.Build("Run from Task Scheduler No Record found for Charge Date between {0} and {1}.",v.Args.dStart.FormatMM/DD/YYYY,v.Args.dEnd.FormatMM/DD/YYYY,v.Local.sHold)
+			f.Intrinsic.File.String2File(v.Local.sFile,v.Local.sHold)
+			f.Intrinsic.Control.CallSub("Unload")				
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.DataTable.Exp.Exists)
+		f.Data.DataTable.Close("Exp")
+	f.Intrinsic.Control.EndIf
+	f.Data.DataTable.Create("Exp",True)
+	f.Data.DataTable.AddColumn("Exp","ID","String","")
+	f.Data.DataTable.AddColumn("Exp","Date","String","")
+	f.Data.DataTable.AddColumn("Exp","Time","String","")
+	f.Data.DataTable.AddColumn("Exp","Labor","String","")
+	f.Data.DataTable.AddColumn("Exp","WorkRule","String","")
+	f.Data.DataTable.AddColumn("Exp","Type","String","")
+	f.Data.DataTable.AddColumn("Exp","Add","String","")
+	
+	f.Intrinsic.Control.For(v.Local.iCnt,0,v.DataTable.Raw.RowCount--,1)
+		v.Local.sTimeIn.Set(v.DataTable.Raw(v.Local.iCnt).Time_In!FieldValString)
+		v.Local.sTimeOut.Set(v.DataTable.Raw(v.Local.iCnt).Time_Out!FieldValString)
+		v.Local.sDateIn.Set(v.DataTable.Raw(v.Local.iCnt).Date_In!FieldValString)
+		v.Local.sDateOut.Set(v.DataTable.Raw(v.Local.iCnt).Date_Out!FieldValString)
+		f.Intrinsic.String.Mid(v.Local.sDateIn,5,2,v.Local.sHold)
+		f.Intrinsic.String.Build("{0}/{1}/{2}",v.Local.sHold,v.Local.sDateIn.Right2,v.Local.sDateIn.left4,v.Local.sHold)
+		f.Intrinsic.Date.IsDate(v.Local.sHold,v.Local.bIsDate)
+		f.Intrinsic.Control.If(v.Local.bIsDate)
+			v.Local.dDateIn.Set(v.Local.sHold)
+			v.Local.sTimeIn.Set(v.Local.sTimeIn.left4)
+			f.Intrinsic.String.Build("{0}:{1}",v.Local.sTimeIn.left2,v.Local.sTimeIn.Right2,v.Local.sTimeIn)
+			f.Data.DataTable.AddRow("Exp","ID",v.DataTable.Raw(v.Local.iCnt).Comments_1!FieldValString,"Date",v.Local.dDateIn.FormatMM/DD/YYYY,"Time",v.Local.sTimeIn,"Type","In Punch")
+			'Date Out
+			f.Intrinsic.String.Mid(v.Local.sDateOut,5,2,v.Local.sHold)
+			f.Intrinsic.String.Build("{0}/{1}/{2}",v.Local.sHold,v.Local.sDateOut.Right2,v.Local.sDateOut.left4,v.Local.sHold)
+			f.Intrinsic.Date.IsDate(v.Local.sHold,v.Local.bIsDate)
+			f.Intrinsic.Control.If(v.Local.bIsDate)
+				v.Local.dDateOut.Set(v.Local.sHold)
+				v.Local.sTimeOut.Set(v.Local.sTimeOut.left4)
+				f.Intrinsic.String.Build("{0}:{1}",v.Local.sTimeOut.left2,v.Local.sTimeOut.Right2,v.Local.sTimeOut)
+				f.Data.DataTable.AddRow("Exp","ID",v.DataTable.Raw(v.Local.iCnt).Comments_1!FieldValString,"Date",v.Local.dDateOut.FormatMM/DD/YYYY,"Time",v.Local.sTimeOut,"Type","Out Punch")					
+			f.Intrinsic.Control.EndIf			
+		f.Intrinsic.Control.EndIf	
+	f.Intrinsic.Control.Next(v.Local.iCnt)
+	
+	f.Data.DataView.Create("Exp","dvExp")
+	f.Data.DataView.ToString("Exp","dvExp","ID*!*Date*!*Time*!*Labor*!*WorkRule*!*Type*!*Add",",",v.Ambient.NewLine,v.Local.sExport)
+	f.Intrinsic.String.Build("{0}\{1}_{2}_run_{3}.csv",v.Args.ExportFolder,v.Local.dStart.FormatYYYYMMDD,v.Local.dEnd.FormatYYYYMMDD,v.Ambient.Now.FormatHHNNSS,v.Global.sExportFile)
+	
+	v.Local.bExist.Declare
+	f.Intrinsic.String.Build("{0}\TEMP",V.Args.ExportFolder,v.Global.sFileToSend)
+	f.Intrinsic.File.DirExists(v.Global.sFileToSend,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Global.sFileToSend)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Build("{0}\IKPADP.csv",v.Global.sFileToSend,v.Global.sFileToSend)
+	f.Intrinsic.File.String2File(v.Global.sExportFile,v.Local.sExport)
+	f.Intrinsic.File.String2File(v.Global.sFileToSend,v.Local.sExport)
+	gui.Form.lblStatus.Text("")
+	
+'	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)
+'		f.Intrinsic.UI.Msgbox(v.Global.sExportFile,"File Exported")
+'		f.Intrinsic.UI.Msgbox(v.Global.sFileToSend,"File to Send")
+'	f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub("Catch_Handling","ScriptPath",V.Ambient.ScriptPath,"CurrentSubroutine",V.Ambient.CurrentSubroutine,"ErrorNumber",V.Ambient.ErrorNumber,"ErrorDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Process.End
+
+Program.Sub.cmdBrowseFolder_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.sPath.Declare
+	
+	F.Intrinsic.UI.FolderBrowser("Select Folder for Path",V.Local.sPath)
+	f.Intrinsic.Control.If(v.Local.sPath.IsCancel,=,False)
+		gui.Form.txtExportFolder.Text(v.Local.sPath)
+	f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub("Catch_Handling","ScriptPath",V.Ambient.ScriptPath,"CurrentSubroutine",V.Ambient.CurrentSubroutine,"ErrorNumber",V.Ambient.ErrorNumber,"ErrorDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdBrowseFolder_Click.End
+
+Program.Sub.cmdSend_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.sContentBatFile.Declare
+	v.Local.sBatFile.Declare
+
+	f.Intrinsic.String.Build("{0}C:\Program Files (x86)\WinSCP\WinSCP.com{0} ^{1}  /log={0}D:\WinSCP_LogWinSCP.log{0} /ini=nul ^{1}  /command ^{1}    {0}open sftp://nx4_xfer:24288442-Adp@filetransfer2.adp.com:10022/ -hostkey={0}{0}ssh-rsa 2048 kSrsl2Spg1oyRZoDq/JI17DUdNMp3HR18hvqkr6GPFQ={0}{0}{0} ^{1}    {0}cd toADP{0} ^{1}    {0}Put {2}{0} ^{1}    {0}exit{0}{1}{1}set WINSCP_RESULT=%ERRORLEVEL%{1}if %WINSCP_RESULT% equ 0 ({1}  echo Success{1}) else ({1}  echo Error{1}){1}{1}exit /b %WINSCP_RESULT%",v.Ambient.DblQuote,v.Ambient.NewLine,v.Global.sFileToSend,v.Local.sContentBatFile)
+
+	'Create FTPPut.bat file
+	f.Intrinsic.String.Build("{0}\{1}_ADP_Transfer_{2}.bat",v.Caller.FilesDir,v.Caller.CompanyCode,v.Caller.Terminal,v.Local.sBatFile)
+	f.Intrinsic.File.String2File(v.Local.sBatFile,v.Local.sContentBatFile)
+	F.Intrinsic.Task.LaunchSync(v.Local.sBatFile)
+	f.Intrinsic.UI.Msgbox("Sent successfully.","Complete")
+
+F.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub("Catch_Handling","ScriptPath",V.Ambient.ScriptPath,"CurrentSubroutine",V.Ambient.CurrentSubroutine,"ErrorNumber",V.Ambient.ErrorNumber,"ErrorDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdSend_Click.End
